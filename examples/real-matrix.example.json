@@ -1,0 +1,54 @@
+{
+  "defaults": {
+    "provider": "openai",
+    "model": "reverser-model",
+    "openai_api": "responses",
+    "checker_provider": "openai",
+    "checker_model": "checker-model",
+    "checker_openai_api": "responses",
+    "ghidra_cli": "ghidra-bridge",
+    "review_rounds": 3,
+    "parity_fail_on_yellow": false,
+    "matrix_timeout": 3600
+  },
+  "cases": [
+    {
+      "name": "linux-elf-cpp",
+      "format": "ELF",
+      "object_file": "/absolute/path/to/linux/target.o",
+      "project_root": "/absolute/path/to/project",
+      "address": "0x401000",
+      "address_map": "ghidra-address-map.json",
+      "build_commands": [
+        "cmake -S . -B build",
+        "cmake --build build"
+      ],
+      "test_commands": [
+        "ctest --test-dir build --output-on-failure"
+      ],
+      "runtime_commands": [
+        "./build/project-smoke-test"
+      ]
+    },
+    {
+      "name": "windows-coff-cpp",
+      "format": "COFF",
+      "object_file": "/absolute/path/to/windows/target.obj",
+      "project_root": "/absolute/path/to/project",
+      "address": "0x140001000",
+      "source_file": "src/Target.cpp",
+      "function": "Target::Run",
+      "function_signature": "int Target::Run(const Input &input) const",
+      "build_commands": [
+        "cmake -S . -B build",
+        "cmake --build build"
+      ],
+      "test_commands": [
+        "ctest --test-dir build --output-on-failure"
+      ],
+      "runtime_commands": [
+        "./build/project-smoke-test"
+      ]
+    }
+  ]
+}
