@@ -23,29 +23,45 @@
 
 `PASS` 是保守的工程验证结果，不是语义等价或二进制一致性的形式化证明。
 
-```text
-.o/.obj + address + source mapping
-                 │
-                 ▼
-  object evidence + 7 Ghidra artifacts
-                 │
-                 ▼
-       persistent JSON knowledge graph
-                 │
-                 ▼
-       reverser ──► candidate function
-                         │
-          ┌──────────────┼──────────────┐
-          ▼              ▼              ▼
-       checker      objective       11-signal
-       model        verifier         parity
-          └──────────────┼──────────────┘
-                         ▼
-          isolated project overlay
-             build → test → runtime
-                         │
-                FAIL ────┴───► bounded repair
+## 整体流程
+
+```mermaid
+flowchart TD
+    A["输入 .o/.obj、目标地址、源码工程和函数映射"] --> B["对象证据：格式、符号、重定位、ASM"]
+    B --> C["Ghidra Bridge 七项证据"]
+    C --> D["decompile / context / asm / pcode / cfg / xrefs-from / xrefs-to"]
+    D --> E["持久化 JSON 知识图谱"]
+    E --> F["完整签名 + 地址映射定位唯一函数"]
+    F --> G["reverser 生成候选函数体"]
+    G --> H["独立 checker 模型审查"]
+    G --> I["确定性 objective verifier"]
+    G --> J["11 项 parity engine"]
+    H --> K["只替换目标函数体的完整项目 overlay"]
+    I --> K
+    J --> K
+    K --> L["build gate"]
+    L --> M["test gate"]
+    M --> N["runtime gate"]
+    N --> O{"全部 PASS?"}
+    O -- "是" --> P["输出恢复代码、知识图谱、逐轮日志和结果"]
+    O -- "否" --> Q{"仍在 review-rounds 上限内?"}
+    Q -- "是" --> R["把候选、verdict、findings 和门禁输出反馈给 reverser"]
+    R --> G
+    Q -- "否" --> S["失败退出，不覆盖原项目"]
 ```
+
+| 阶段 | 必需输入 | 主要产物 | 阻塞条件 |
+|---|---|---|---|
+| 对象分析 | `.o`/`.obj` | 格式、符号、重定位、反汇编 | 非对象文件、工具失败 |
+| Ghidra | 地址和 bridge | 7 项只读 artifact | 任一项失败或为空 |
+| 图谱与定位 | artifact、项目源码、地址映射 | JSON 知识图谱、唯一目标函数 | 签名/地址冲突或重载歧义 |
+| reverser/checker | 两个不同模型 | 候选函数、JSON verdict | 模型协议错误、checker FAIL |
+| 确定性检查 | 候选、ASM、P-code、CFG | objective verdict、11 项 parity | objective FAIL 或 parity RED |
+| 项目 overlay | 完整项目副本、候选函数体 | 隔离构建目录 | 替换范围不唯一 |
+| 三重门禁 | 用户声明的真实命令 | build/test/runtime 结果 | 任一配置门禁失败 |
+| 有界修复 | 上轮全部诊断 | 下一轮完整 prompt 和新候选 | 达到轮数上限仍未通过 |
+
+这里的 loop 是明确可审计的反馈闭环：checker、objective、parity、build、test、runtime 中任何失败都会进入下一轮 prompt；每轮 prompt、模型原始响应、verdict 和命令结果都会写入 `reports/mini-re/logs/round-*.json`。
 
 ## 快速体验
 
@@ -57,6 +73,75 @@ cd mini-re
 python3 -m pip install -e .
 python3 examples/complex_loop_demo.py --output-dir work/complex-loop-demo
 ```
+
+## `.o` 与对应反编译代码
+
+仓库直接包含一个可下载、可分析的 x86-64 ELF 对象，以及它的对照源码和反编译风格恢复结果：
+
+| 文件 | 用途 |
+|---|---|
+| [`examples/decompile_demo/score_bytes.o`](examples/decompile_demo/score_bytes.o) | 使用 clang `-O2` 生成的 ELF relocatable object |
+| [`examples/decompile_demo/score_bytes_source.c`](examples/decompile_demo/score_bytes_source.c) | 仅用于验证和理解对象来源的原始实现 |
+| [`examples/decompile_demo/score_bytes.decompiled.c`](examples/decompile_demo/score_bytes.decompiled.c) | 与对象控制流对应的反编译风格 C 代码 |
+
+对象中包含早退、循环、数据相关分支和四路 `switch`。可以先确认格式与符号，再让 mini-re 输出本地证据：
+
+```bash
+file examples/decompile_demo/score_bytes.o
+# ELF 64-bit LSB relocatable, x86-64, ...
+
+nm -g examples/decompile_demo/score_bytes.o
+# 0000000000000000 T score_bytes
+
+python3 mini_re.py examples/decompile_demo/score_bytes.o --dump-evidence
+```
+
+对应恢复函数保留了对象中的循环、四种算术路径、状态转移计数和返回值掩码；变量名和类型是反编译器常见的通用形式：
+
+```c
+int score_bytes(byte *param_1, ulong param_2, int param_3) {
+    byte previous;
+    uint accumulator;
+    ulong index;
+    int transitions;
+
+    if ((param_1 == (byte *)0) || (param_2 == 0))
+        return -1;
+
+    previous = *param_1;
+    accumulator = (uint)param_3 ^ 0x9e3779b9u;
+    index = 0;
+    transitions = 0;
+
+    do {
+        byte value = param_1[index];
+        transitions += value != previous;
+        switch (index & 3) {
+            case 0: accumulator += (uint)value * 3u; break;
+            case 1: accumulator ^= (uint)value << 5; break;
+            case 2: accumulator = (accumulator << 7 | accumulator >> 25) + value; break;
+            default: accumulator -= (uint)value * 7u; break;
+        }
+        previous = value;
+        ++index;
+    } while (index < param_2);
+
+    return (int)((accumulator ^ (uint)transitions) & 0x7fffffffu);
+}
+```
+
+上面的片段为了突出主体控制流省略了类型定义；可编译的完整恢复文件会由测试重新编译，并与原始实现对多组长度、字节序列和 seed 做运行结果对比。
+
+可用下面的命令重新生成随仓库提交的 ELF 对象：
+
+```bash
+clang --target=x86_64-unknown-linux-gnu -std=c11 -O2 \
+  -fno-ident -fno-asynchronous-unwind-tables \
+  -c examples/decompile_demo/score_bytes_source.c \
+  -o examples/decompile_demo/score_bytes.o
+```
+
+注意：优化后的对象通常已经丢失原变量名和部分源级类型信息，因此反编译结果是可验证的高层重建，不是原源码的逐字恢复，也不是形式化等价证明。
 
 ## 要求
 
@@ -229,7 +314,7 @@ python3 -m pip install -e .
 python3 -m unittest discover -s tests -v
 ```
 
-当前离线套件包含 28 项测试：27 项默认执行，真实 Ghidra + 双模型端到端项仅在提供显式配置时执行。详细分层、依赖、预期结果和真实矩阵配置见 [`docs/testing.md`](docs/testing.md)。GitHub Actions 会在 Python 3.9–3.13 上运行离线套件，并安装 clang/binutils 以覆盖 ELF、COFF 与 C++ 对象矩阵。
+当前离线套件包含 30 项测试：29 项默认执行，真实 Ghidra + 双模型端到端项仅在提供显式配置时执行。详细分层、依赖、预期结果和真实矩阵配置见 [`docs/testing.md`](docs/testing.md)。GitHub Actions 会在 Python 3.9–3.13 上运行离线套件，并安装 clang/binutils 以覆盖 ELF、COFF 与 C++ 对象矩阵。
 
 默认测试不访问真实模型。它使用严格 fake Ghidra、两个 scripted 模型及真实系统编译器，覆盖全证据门禁、objective、11 项 parity、三类验证门禁、知识图谱、FAIL→反馈→修复→PASS、签名/地址映射消歧和每轮日志。格式矩阵使用真实 clang 生成并分析 native C++、Linux ELF 和 Windows COFF 对象。
 
@@ -274,6 +359,7 @@ mini_re.py                 对象证据提取、模型 provider 与 CLI
 advanced.py                Ghidra、知识图谱、overlay 和审查闭环
 verifiers.py               objective verifier 与 11 项 parity engine
 integration_matrix.py      真实 Ghidra + 双模型矩阵执行器
+examples/decompile_demo/   ELF .o、原始源码与对应反编译代码
 examples/                  复杂闭环演示、C/C++ 样本与矩阵配置
 tests/                     单元、闭环、格式和真实集成测试
 docs/testing.md            完整测试手册

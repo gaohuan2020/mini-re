@@ -11,5 +11,6 @@ outputs/
 reports/
 examples/out/
 *.o
+!examples/decompile_demo/score_bytes.o
 *.obj
 *.exe
