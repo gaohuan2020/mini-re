@@ -25,9 +25,10 @@ python3 -m unittest discover -s tests -v
 | 确定性验证 | `tests/test_verifiers.py` | objective verifier 与 11 项 parity signal |
 | 复杂闭环 | `tests/test_complex_loop.py` | checker FAIL 后诊断回灌、候选修复以及 build/test/runtime 独立门禁 |
 | 格式矩阵 | `tests/test_format_matrix.py` | clang 真实生成 native、ELF、COFF C++ 对象并提取证据 |
+| 对象/反编译对照 | `tests/test_decompile_demo.py` | 检查随仓库提交的 ELF `.o`、目标符号、证据提取、恢复代码编译和行为对照 |
 | 集成矩阵 | `tests/test_real_integration_matrix.py` | 配置契约，以及可选的真实 Ghidra + 双模型执行 |
 
-默认预期为 28 项测试中 27 项通过、1 项跳过。跳过项是需要外部工程、Ghidra 和模型凭据的真实端到端测试。
+默认预期为 30 项测试中 29 项通过、1 项跳过。跳过项是需要外部工程、Ghidra 和模型凭据的真实端到端测试。
 
 ## 复杂对象修复闭环
 
