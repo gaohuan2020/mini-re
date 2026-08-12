@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "0x1000": {
+      "source_file": "src/analyzer.cpp",
+      "function": "Analyzer::score",
+      "signature": "int Analyzer::score(const std::vector<int> &samples, const Options &options) const"
+    }
+  }
+}
