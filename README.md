@@ -74,6 +74,50 @@ python3 -m pip install -e .
 python3 examples/complex_loop_demo.py --output-dir work/complex-loop-demo
 ```
 
+### 多文件 C++ 项目测试
+
+`examples/complex_project/` 是一个可独立构建的 C++17 项目，而不是单文件测试夹具。它包含：
+
+- 静态库、CLI、单元测试和跨文件 helper；
+- `Analyzer::score` 的标量/向量重载；
+- 完整签名和地址映射消歧；
+- 循环、clamp 分支、四路 switch、跨文件调用和状态累计；
+- CMake 与 Make 两套真实构建入口；
+- build、test、runtime 三类独立门禁。
+
+执行完整两轮修复：
+
+```bash
+python3 examples/complex_project_demo.py \
+  --output-dir work/complex-project-demo
+```
+
+预期过程如下：
+
+| 轮次 | checker | objective | build | test | runtime | 结果 |
+|---|---|---|---|---|---|---|
+| 1 | FAIL | FAIL | PASS | PASS | FAIL | 将缺失循环/switch 和 CLI 行为错误反馈给 reverser |
+| 2 | PASS | PASS | PASS | PASS | PASS | 保存恢复函数、知识图谱、overlay 和逐轮日志 |
+
+第一轮候选仍能编译成静态库，并能通过只覆盖 helper 与标量重载的单元测试，但 CLI 的向量行为检查失败。这可以验证三类门禁彼此独立。第二轮只替换 [`src/analyzer.cpp`](examples/complex_project/src/analyzer.cpp) 中向量重载的函数体，标量重载和其他文件保持不变。
+
+复杂项目也可以不经过 mini-re 单独构建；checked-in 源码故意包含待恢复 stub，因此 `make runtime` 预期失败：
+
+```bash
+cd examples/complex_project
+make clean all
+make test
+make runtime  # 原始 stub 项目预期失败
+```
+
+CMake 用户可以运行：
+
+```bash
+cmake -S examples/complex_project -B work/complex-project-cmake
+cmake --build work/complex-project-cmake
+ctest --test-dir work/complex-project-cmake --output-on-failure
+```
+
 ## `.o` 与对应反编译代码
 
 仓库直接包含一个可下载、可分析的 x86-64 ELF 对象，以及它的对照源码和反编译风格恢复结果：
@@ -314,7 +358,7 @@ python3 -m pip install -e .
 python3 -m unittest discover -s tests -v
 ```
 
-当前离线套件包含 30 项测试：29 项默认执行，真实 Ghidra + 双模型端到端项仅在提供显式配置时执行。详细分层、依赖、预期结果和真实矩阵配置见 [`docs/testing.md`](docs/testing.md)。GitHub Actions 会在 Python 3.9–3.13 上运行离线套件，并安装 clang/binutils 以覆盖 ELF、COFF 与 C++ 对象矩阵。
+当前离线套件包含 31 项测试：30 项默认执行，真实 Ghidra + 双模型端到端项仅在提供显式配置时执行。详细分层、依赖、预期结果和真实矩阵配置见 [`docs/testing.md`](docs/testing.md)。GitHub Actions 会在 Python 3.9–3.13 上运行离线套件，并安装 clang/binutils 以覆盖 ELF、COFF 与 C++ 对象矩阵。
 
 默认测试不访问真实模型。它使用严格 fake Ghidra、两个 scripted 模型及真实系统编译器，覆盖全证据门禁、objective、11 项 parity、三类验证门禁、知识图谱、FAIL→反馈→修复→PASS、签名/地址映射消歧和每轮日志。格式矩阵使用真实 clang 生成并分析 native C++、Linux ELF 和 Windows COFF 对象。
 
@@ -360,6 +404,8 @@ advanced.py                Ghidra、知识图谱、overlay 和审查闭环
 verifiers.py               objective verifier 与 11 项 parity engine
 integration_matrix.py      真实 Ghidra + 双模型矩阵执行器
 examples/decompile_demo/   ELF .o、原始源码与对应反编译代码
+examples/complex_project/  多文件 C++17 静态库、CLI、单测和双构建入口
+examples/complex_project_demo.py  复杂项目两轮 overlay 修复演示
 examples/                  复杂闭环演示、C/C++ 样本与矩阵配置
 tests/                     单元、闭环、格式和真实集成测试
 docs/testing.md            完整测试手册
