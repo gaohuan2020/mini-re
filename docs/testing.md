@@ -24,11 +24,28 @@ python3 -m unittest discover -s tests -v
 | 高级流水线 | `tests/test_advanced.py` | 7 项 Ghidra artifact、知识图谱、overlay、重载保护、门禁和日志 |
 | 确定性验证 | `tests/test_verifiers.py` | objective verifier 与 11 项 parity signal |
 | 复杂闭环 | `tests/test_complex_loop.py` | checker FAIL 后诊断回灌、候选修复以及 build/test/runtime 独立门禁 |
+| 复杂 C++ 项目 | `tests/test_complex_project.py` | 多文件静态库、重载地址映射、完整 overlay、Make build、单测和 CLI runtime 修复闭环 |
 | 格式矩阵 | `tests/test_format_matrix.py` | clang 真实生成 native、ELF、COFF C++ 对象并提取证据 |
 | 对象/反编译对照 | `tests/test_decompile_demo.py` | 检查随仓库提交的 ELF `.o`、目标符号、证据提取、恢复代码编译和行为对照 |
 | 集成矩阵 | `tests/test_real_integration_matrix.py` | 配置契约，以及可选的真实 Ghidra + 双模型执行 |
 
-默认预期为 30 项测试中 29 项通过、1 项跳过。跳过项是需要外部工程、Ghidra 和模型凭据的真实端到端测试。
+默认预期为 31 项测试中 30 项通过、1 项跳过。跳过项是需要外部工程、Ghidra 和模型凭据的真实端到端测试。
+
+## 多文件 C++ 项目闭环
+
+```bash
+python3 examples/complex_project_demo.py \
+  --output-dir work/complex-project-demo
+```
+
+这个测试会复制 `examples/complex_project/`，从参考实现生成真实 C++ 对象文件，然后执行严格 fake Ghidra、两个 scripted 模型和真实项目门禁。关键断言包括：
+
+1. 地址 `0x1000` 通过完整签名选中 `Analyzer::score(vector, Options)`，不会误改标量重载。
+2. 第一轮候选能够通过 `make clean all` 和 `make test`，但 `make runtime` 失败。
+3. checker、objective verifier 和 runtime 输出全部进入第二轮 reverser prompt。
+4. 第二轮重新执行 build/test/runtime，三类门禁全部 PASS。
+5. 原项目源码不变；最终 overlay 包含静态库、CLI、include/src/tests 和两套构建描述。
+6. 每轮日志、知识图谱、目标完整签名和地址映射路径均可审计。
 
 ## 复杂对象修复闭环
 
