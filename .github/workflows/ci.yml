@@ -34,3 +34,17 @@ jobs:
 
       - name: Run offline suite
         run: python -m unittest discover -s tests -v
+
+  complex-project-cmake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure multi-file C++ fixture
+        run: cmake -S examples/complex_project -B build/complex-project
+
+      - name: Build static library, CLI, and tests
+        run: cmake --build build/complex-project --parallel
+
+      - name: Run CTest gate
+        run: ctest --test-dir build/complex-project --output-on-failure
